@@ -28,6 +28,8 @@ No rustfmt, clippy, or lint CI steps are configured. No task runner.
 
 Follow the [Angular commit message convention](https://github.com/conventional-changelog/conventional-changelog-angular/blob/master/convention.md) (e.g. `feat(router): ...`, `fix(*): ...`). Changelogs are generated with `clog` (see `.clog.toml`).
 
+When an AI coding agent generates or substantially contributes to a commit, add an attribution line at the end of the commit body: `Generated with OpenCode using <model>` (e.g. `Generated with OpenCode using anthropic/claude-opus-4.6`).
+
 ## Source layout
 
 - `src/lib.rs` — crate root, re-exports public API and `pub use http` for the `http` crate
