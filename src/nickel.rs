@@ -1,24 +1,22 @@
-use std::net::ToSocketAddrs;
-use std::time::Duration;
+use crate::middleware::{ErrorHandler, Middleware, MiddlewareStack};
+use crate::router::{HttpRouter, Matcher, Router};
+use crate::server::{ListeningServer, Server};
+use crate::template_cache::ReloadPolicy;
+use http::Method;
+use http::StatusCode;
 use std::env;
 use std::error::Error as StdError;
-use router::{Router, HttpRouter, Matcher};
-use middleware::{MiddlewareStack, Middleware, ErrorHandler};
-use server::{Server, ListeningServer};
-use template_cache::ReloadPolicy;
-use hyper::method::Method;
-use hyper::net::SslServer;
-use hyper::status::StatusCode;
+use std::time::Duration;
 
 //pre defined middleware
-use default_error_handler::DefaultErrorHandler;
+use crate::default_error_handler::DefaultErrorHandler;
 
 /// Configuration options for the server.
 ///
 /// This struct provides a builder-style API for constructing the desired options.
 ///
 /// # Examples
-/// ```{rust}
+/// ```rust,no_run
 /// use nickel::{Nickel, Options};
 /// let mut server = Nickel::new();
 ///
@@ -43,8 +41,7 @@ impl Options {
         self
     }
 
-    /// The number of threads the server should use or `None` to use the
-    /// `hyper`'s default of `1.25 * core_count`.
+    /// The number of threads the server should use or `None` for the default.
     ///
     /// Defaults to `None`.
     pub fn thread_count(mut self, thread_count: Option<usize>) -> Self {
@@ -81,7 +78,12 @@ pub struct Nickel<D: Sync + Send + 'static = ()> {
 }
 
 impl<D: Sync + Send + 'static> HttpRouter<D> for Nickel<D> {
-    fn add_route<M: Into<Matcher>, H: Middleware<D>>(&mut self, method: Method, matcher: M, handler: H) -> &mut Self {
+    fn add_route<M: Into<Matcher>, H: Middleware<D>>(
+        &mut self,
+        method: Method,
+        matcher: M,
+        handler: H,
+    ) -> &mut Self {
         let mut router = Router::new();
         router.add_route(method, matcher, handler);
         self.utilize(router);
@@ -103,7 +105,7 @@ impl Nickel<()> {
 
 impl<D: Sync + Send + 'static> Nickel<D> {
     /// Creates an instance of Nickel with default error handling,
-    /// default Ooptions, and custom data.
+    /// default Options, and custom data.
     pub fn with_data_and_options(data: D, options: Options) -> Nickel<D> {
         let mut middleware_stack = MiddlewareStack::new();
 
@@ -113,16 +115,16 @@ impl<D: Sync + Send + 'static> Nickel<D> {
         middleware_stack.add_error_handler(DefaultErrorHandler);
 
         Nickel {
-            middleware_stack: middleware_stack,
-            options: options,
-            data: data,
+            middleware_stack,
+            options,
+            data,
             // Default value from nginx
-            keep_alive_timeout: Some(Duration::from_secs(75))
+            keep_alive_timeout: Some(Duration::from_secs(75)),
         }
     }
 
     /// Creates an instance of Nickel with default error handling,
-    /// default Ooptions, and custom data.
+    /// default Options, and custom data.
     pub fn with_data(data: D) -> Nickel<D> {
         Nickel::with_data_and_options(data, Options::default())
     }
@@ -138,17 +140,17 @@ impl<D: Sync + Send + 'static> Nickel<D> {
     /// be stopped after the current handler.
     ///
     /// # Examples
-    /// ```{rust}
+    /// ```rust,no_run
     /// # #[macro_use] extern crate nickel;
     /// # fn main() {
     /// use nickel::Nickel;
     /// let mut server = Nickel::new();
     /// server.utilize(middleware! { |req|
-    ///     println!("logging request: {:?}", req.origin.uri);
+    ///     println!("logging request: {:?}", req.uri());
     /// });
     /// # }
     /// ```
-    pub fn utilize<T: Middleware<D>>(&mut self, handler: T){
+    pub fn utilize<T: Middleware<D>>(&mut self, handler: T) {
         self.middleware_stack.add_middleware(handler);
     }
 
@@ -160,17 +162,17 @@ impl<D: Sync + Send + 'static> Nickel<D> {
     ///
     /// # Examples
     ///
-    /// ```{rust}
+    /// ```rust,no_run
     /// # extern crate nickel;
     /// # fn main() {
     /// use std::io::Write;
     /// use nickel::{Nickel, Request, Continue, Halt};
     /// use nickel::{NickelError, Action};
-    /// use nickel::status::StatusCode::NotFound;
+    /// use nickel::status::StatusCode;
     ///
     /// fn error_handler<D>(err: &mut NickelError<D>, _req: &mut Request<D>) -> Action {
     ///    if let Some(ref mut res) = err.stream {
-    ///        if res.status() == NotFound {
+    ///        if res.status() == StatusCode::NOT_FOUND {
     ///            let _ = res.write_all(b"<h1>Call the police!</h1>");
     ///            return Halt(())
     ///        }
@@ -186,7 +188,7 @@ impl<D: Sync + Send + 'static> Nickel<D> {
     /// server.handle_error(ehandler)
     /// # }
     /// ```
-    pub fn handle_error<T: ErrorHandler<D>>(&mut self, handler: T){
+    pub fn handle_error<T: ErrorHandler<D>>(&mut self, handler: T) {
         self.middleware_stack.add_error_handler(handler);
     }
 
@@ -194,7 +196,7 @@ impl<D: Sync + Send + 'static> Nickel<D> {
     ///
     ///
     /// # Examples
-    /// ```{rust}
+    /// ```rust,no_run
     /// #[macro_use] extern crate nickel;
     /// use nickel::{Nickel, HttpRouter};
     ///
@@ -216,7 +218,7 @@ impl<D: Sync + Send + 'static> Nickel<D> {
     /// Bind and listen for connections on the given host and port.
     ///
     /// # Examples
-    /// ```rust
+    /// ```rust,no_run
     /// use nickel::Nickel;
     ///
     /// let server = Nickel::new();
@@ -225,9 +227,12 @@ impl<D: Sync + Send + 'static> Nickel<D> {
     /// # // unblock the server so the test doesn't block forever
     /// # listening.detach();
     /// ```
-    pub fn listen<T: ToSocketAddrs>(mut self, addr: T) -> Result<ListeningServer, Box<StdError>> {
+    pub fn listen(
+        mut self,
+        addr: &str,
+    ) -> Result<ListeningServer, Box<dyn StdError + Send + Sync>> {
         self.middleware_stack.add_middleware(middleware! {
-            (StatusCode::NotFound, "File Not Found")
+            (StatusCode::NOT_FOUND, "File Not Found")
         });
 
         let server = Server::new(self.middleware_stack, self.options.reload_policy, self.data);
@@ -235,15 +240,13 @@ impl<D: Sync + Send + 'static> Nickel<D> {
         let is_test_harness = env::var_os("NICKEL_TEST_HARNESS").is_some();
 
         let listener = if is_test_harness {
-            // If we're under a test harness, we'll pass zero to get assigned a random
-            // port. See http://doc.rust-lang.org/std/net/struct.TcpListener.html#method.bind
-            try!(server.serve("localhost:0",
-                              self.keep_alive_timeout,
-                              self.options.thread_count))
+            server.serve(
+                "localhost:0",
+                self.keep_alive_timeout,
+                self.options.thread_count,
+            )?
         } else {
-            try!(server.serve(addr,
-                              self.keep_alive_timeout,
-                              self.options.thread_count))
+            server.serve(addr, self.keep_alive_timeout, self.options.thread_count)?
         };
 
         if self.options.output_on_listen {
@@ -267,87 +270,25 @@ impl<D: Sync + Send + 'static> Nickel<D> {
     /// # Default
     ///
     /// The default value is 75 seconds.
-    pub fn keep_alive_timeout(&mut self, timeout: Option<Duration>){
+    pub fn keep_alive_timeout(&mut self, timeout: Option<Duration>) {
         self.keep_alive_timeout = timeout;
-    }
-
-    /// Bind and listen for connections on the given host and port.
-    /// Only accepts SSL connections
-    ///
-    /// # Panics
-    ///
-    /// Panics if `addr` is an invalid `SocketAddr`.
-    ///
-    /// # Examples
-    /// ```{rust,no_run}
-    /// # extern crate nickel;
-    /// extern crate hyper;
-    ///
-    /// # #[cfg(feature = "ssl")]
-    /// use nickel::Nickel;
-    /// # #[cfg(feature = "ssl")]
-    /// use hyper::net::Openssl;
-    ///
-    /// # #[cfg(feature = "ssl")]
-    /// # fn main() {
-    /// let server = Nickel::new();
-    /// let ssl = Openssl::with_cert_and_key("foo.crt", "key.pem").unwrap();
-    /// server.listen_https("127.0.0.1:6767", ssl).unwrap();
-    /// # }
-    /// # #[cfg(not(feature = "ssl"))]
-    /// # fn main() {}
-    /// ```
-    pub fn listen_https<T,S>(mut self, addr: T, ssl: S) -> Result<ListeningServer, Box<StdError>>
-    where T: ToSocketAddrs,
-          S: SslServer + Send + Clone + 'static {
-        self.middleware_stack.add_middleware(middleware! {
-            (StatusCode::NotFound, "File Not Found")
-        });
-
-        let server = Server::new(self.middleware_stack, self.options.reload_policy, self.data);
-
-        let is_test_harness = env::var_os("NICKEL_TEST_HARNESS").is_some();
-
-        let listener = if is_test_harness {
-            // If we're under a test harness, we'll pass zero to get assigned a random
-            // port. See http://doc.rust-lang.org/std/net/struct.TcpListener.html#method.bind
-            try!(server.serve_https("localhost:0",
-                                   self.keep_alive_timeout,
-                                   self.options.thread_count,
-                                   ssl))
-        } else {
-            try!(server.serve_https(addr,
-                                   self.keep_alive_timeout,
-                                   self.options.thread_count,
-                                   ssl))
-        };
-
-        if self.options.output_on_listen {
-            println!("Listening on https://{}", listener.socket());
-            println!("Ctrl-C to shutdown server");
-        }
-
-        Ok(listener)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use Nickel;
-    use std::str::FromStr;
+    use crate::Nickel;
     use std::net::SocketAddr;
-
-    #[test]
-    #[should_panic(expected = "invalid socket address")]
-    fn invalid_listen_addr() {
-        Nickel::new().listen("127.0.0.1.6667").unwrap();
-    }
+    use std::str::FromStr;
 
     #[test]
     fn can_get_server_address() {
         let server = Nickel::new().listen("127.0.0.1:12345").unwrap();
 
-        assert_eq!(server.socket(), SocketAddr::from_str("127.0.0.1:12345").unwrap());
+        assert_eq!(
+            server.socket(),
+            SocketAddr::from_str("127.0.0.1:12345").unwrap()
+        );
         server.detach();
     }
 

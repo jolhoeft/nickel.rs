@@ -1,21 +1,15 @@
-#[macro_use] extern crate nickel;
-extern crate hyper;
+#[macro_use]
+extern crate nickel;
 
-use nickel::{Nickel, HttpRouter, Request, Response, MiddlewareResult};
-use hyper::header::{AccessControlAllowOrigin, AccessControlAllowHeaders};
+use nickel::{HttpRouter, MiddlewareResult, Nickel, Request, Response};
 
 fn enable_cors<'mw>(_req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
     // Set appropriate headers
-    res.set(AccessControlAllowOrigin::Any);
-    res.set(AccessControlAllowHeaders(vec![
-        // Hyper uses the `unicase::Unicase` type to ensure comparisons are done
-        // case-insensitively. Here, we use `into()` to convert to one from a `&str`
-        // so that we don't have to import the type ourselves.
-        "Origin".into(),
-        "X-Requested-With".into(),
-        "Content-Type".into(),
-        "Accept".into(),
-    ]));
+    res.set_header("Access-Control-Allow-Origin", "*");
+    res.set_header(
+        "Access-Control-Allow-Headers",
+        "Origin, X-Requested-With, Content-Type, Accept",
+    );
 
     // Pass control to the next middleware
     res.next_middleware()

@@ -1,3 +1,52 @@
+<a name="0.12.0"></a>
+## 0.12.0 (2026-04-11)
+
+This is a major internal rewrite that upgrades the HTTP stack from hyper 0.10 (synchronous, last release 2017) to hyper 1.x (async, current). The public middleware API remains synchronous — async is handled internally via `tokio::task::spawn_blocking`.
+
+#### Features
+
+* **server:**  rewrite HTTP server on hyper 1.x + tokio, using sync-over-async bridge (`spawn_blocking`) so middleware handlers remain synchronous
+* **dependencies:**  upgrade to Rust 2021 edition; replace `hyper 0.10` with `hyper 1.x`, `hyper-util`, `http`, `http-body-util`, `tokio`, `bytes`; upgrade `url 1` → `2`, `log 0.3` → `0.4`; add `mime 0.3`, `mime_guess 2`, `percent-encoding 2`
+* **request:**  `Request` now owns its data (method, URI string, headers, body bytes) with accessor methods `method()`, `uri()`, `headers()`, `body()`, `body_as_str()`
+* **response:**  `Response` buffers body in `Vec<u8>` (implements `Write`); removed `Fresh`/`Streaming` typestate — single `Response` type throughout the middleware chain
+* **http re-export:**  `nickel::http` re-exports the `http` crate (`StatusCode`, `Method`, `HeaderMap`, etc.)
+* **headers:**  new `res.set_header(name, value)` method for setting headers by string name/value; standard `http::HeaderMap` available via `res.headers_mut()`
+* **tests:**  integration tests now use `reqwest::blocking` instead of hyper 0.10's built-in client
+
+#### Breaking Changes
+
+* **hyper removed from public API:**  `pub extern crate hyper` is gone; `nickel::hyper::*` imports no longer work. Use `nickel::http::*` for `StatusCode`, `Method`, `HeaderMap`, etc.
+* **request.origin removed:**  `req.origin` (the raw `hyper::server::Request`) no longer exists. Use `req.method()`, `req.uri()`, `req.headers()`, `req.body()` instead.
+* **StatusCode constants renamed:**  now uses `http` crate conventions — `StatusCode::Ok` → `StatusCode::OK`, `StatusCode::NotFound` → `StatusCode::NOT_FOUND`, `StatusCode::BadRequest` → `StatusCode::BAD_REQUEST`, etc.
+* **Method constants renamed:**  `Method::Get` → `Method::GET`, `Method::Post` → `Method::POST`, etc.
+* **Typed headers removed:**  hyper 0.10's typed header API (`hyper::header::ContentType`, `hyper::header::Location`, `hyper::header::AccessControlAllowOrigin`, etc.) is gone. Use `res.set_header("header-name", "value")` or `res.headers_mut().insert(...)` with `http::header::*` constants.
+* **Response typestate removed:**  `Response<'a, D, Fresh>` and `Response<'a, D, Streaming>` collapsed into `Response<'a, D>`. The `hyper::net::Fresh`/`Streaming` types no longer exist.
+* **HTTPS removed:**  `listen_https()` and the `ssl` feature are removed. HTTPS support can be re-added later using `tokio-rustls` or a reverse proxy.
+* **`unstable` feature removed:**  the `unstable` feature (which enabled `hyper/nightly` and `compiletest_rs`) is removed.
+* **Edition 2021:**  Rust edition updated from implicit 2015 to 2021. User crates may need to update `extern crate` statements.
+
+#### Migration Guide
+
+Most middleware code requires only mechanical changes:
+
+```rust
+// Before (0.11):
+use nickel::status::StatusCode;
+req.origin.method   →  req.method()
+req.origin.uri      →  req.uri()
+StatusCode::Ok      →  StatusCode::OK
+StatusCode::NotFound → StatusCode::NOT_FOUND
+Method::Get         →  Method::GET
+res.set(hyper::header::Location("http://example.com".into()))
+                    →  res.set_header("Location", "http://example.com")
+
+// After (0.12):
+use nickel::http::{StatusCode, Method};
+// or continue using nickel::status::StatusCode
+```
+
+
+
 <a name="0.9.0"></a>
 ## 0.9.0 (2016-09-22)
 

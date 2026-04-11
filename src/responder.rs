@@ -9,11 +9,11 @@
 //! in any request.
 //!
 //! Please see the examples for usage.
-use {Response, NickelError, MiddlewareResult, Halt};
-use hyper::status::{StatusCode, StatusClass};
-use hyper::header;
+use crate::mimes::MediaType;
+use crate::{Halt, MiddlewareResult, NickelError, Response};
+use http::header::{HeaderValue, CONTENT_TYPE};
+use http::StatusCode;
 use serde_json;
-use mimes::MediaType;
 use std::io::Write;
 
 /// This trait provides convenience for translating a number
@@ -22,7 +22,7 @@ use std::io::Write;
 ///
 /// Please see the examples for some uses.
 pub trait Responder<D> {
-    fn respond<'a>(self, Response<'a, D>) -> MiddlewareResult<'a, D>;
+    fn respond<'a>(self, res: Response<'a, D>) -> MiddlewareResult<'a, D>;
 }
 
 impl<D> Responder<D> for () {
@@ -34,14 +34,15 @@ impl<D> Responder<D> for () {
 impl<D> Responder<D> for serde_json::Value {
     fn respond<'a>(self, mut res: Response<'a, D>) -> MiddlewareResult<'a, D> {
         maybe_set_type(&mut res, MediaType::Json);
-        res.send(serde_json::to_string(&self)
-                      .map_err(|e| format!("Failed to parse JSON: {}", e)))
+        res.send(serde_json::to_string(&self).map_err(|e| format!("Failed to parse JSON: {}", e)))
     }
 }
 
 impl<T, E, D> Responder<D> for Result<T, E>
-        where T: Responder<D>,
-              for<'e> NickelError<'e, D>: From<(Response<'e, D>, E)> {
+where
+    T: Responder<D>,
+    for<'e> NickelError<'e, D>: From<(Response<'e, D>, E)>,
+{
     fn respond<'a>(self, res: Response<'a, D>) -> MiddlewareResult<'a, D> {
         let data = try_with!(res, self);
         res.send(data)
@@ -64,40 +65,35 @@ macro_rules! dual_impl {
     )
 }
 
-dual_impl!(&'a [u8],
-           Vec<u8>,
-            |self, res| {
-                maybe_set_type(&mut res, MediaType::Bin);
+dual_impl!(&'a [u8], Vec<u8>, |self, res| {
+    maybe_set_type(&mut res, MediaType::Bin);
 
-                let mut stream = try!(res.start());
-                match stream.write_all(&self[..]) {
-                    Ok(()) => Ok(Halt(stream)),
-                    Err(e) => stream.bail(format!("Failed to send: {}", e))
-                }
-            });
+    res.start();
+    match res.write_all(&self[..]) {
+        Ok(()) => Ok(Halt(res)),
+        Err(e) => res.bail(format!("Failed to send: {}", e)),
+    }
+});
 
-dual_impl!(&'a str,
-           String,
-            |self, res| {
-                maybe_set_type(&mut res, MediaType::Html);
-                res.send(self.as_bytes())
-            });
+dual_impl!(&'a str, String, |self, res| {
+    maybe_set_type(&mut res, MediaType::Html);
+    res.send(self.as_bytes())
+});
 
-dual_impl!((StatusCode, &'static str),
-           (StatusCode, String),
-            |self, res| {
-                let (status, message) = self;
+dual_impl!(
+    (StatusCode, &'static str),
+    (StatusCode, String),
+    |self, res| {
+        let (status, message) = self;
 
-                match status.class() {
-                    StatusClass::ClientError | StatusClass::ServerError => {
-                        res.error(status, message)
-                    },
-                    _ => {
-                        res.set(status);
-                        res.send(message)
-                    }
-                }
-            });
+        if status.is_client_error() || status.is_server_error() {
+            res.error(status, message)
+        } else {
+            res.set(status);
+            res.send(message)
+        }
+    }
+);
 
 impl<'a, D> Responder<D> for StatusCode {
     #[inline]
@@ -106,47 +102,29 @@ impl<'a, D> Responder<D> for StatusCode {
     }
 }
 
-dual_impl!(&'a [&'a str],
-           &'a [String],
-            |self, res| {
-                maybe_set_type(&mut res, MediaType::Html);
+dual_impl!(&'a [&'a str], &'a [String], |self, res| {
+    maybe_set_type(&mut res, MediaType::Html);
 
-                let mut stream = try!(res.start());
-                for ref s in self.iter() {
-                    if let Err(e) = stream.write_all(s.as_bytes()) {
-                        return stream.bail(format!("Failed to write to stream: {}", e))
-                    }
-                }
-                Ok(Halt(stream))
-            });
+    res.start();
+    for ref s in self.iter() {
+        if let Err(e) = res.write_all(s.as_bytes()) {
+            return res.bail(format!("Failed to write to stream: {}", e));
+        }
+    }
+    Ok(Halt(res))
+});
 
-dual_impl!((u16, &'static str),
-           (u16, String),
-           |self, res| {
-                let (status, message) = self;
-                res.send((StatusCode::from_u16(status), message))
-            });
+dual_impl!((u16, &'static str), (u16, String), |self, res| {
+    let (status, message) = self;
+    res.send((
+        StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        message,
+    ))
+});
 
-// FIXME: Hyper uses traits for headers, so this needs to be a Vec of
-// trait objects. But, a trait object is unable to have Foo + Bar as a bound.
-//
-// A better/faster solution would be to impl this for tuples,
-// where each tuple element implements the Header trait, which would give a
-// static dispatch.
-// dual_impl!((StatusCode, &'a str, Vec<Box<ResponseHeader>>),
-//            (StatusCode, String, Vec<Box<ResponseHeader>>)
-//            |self, res| {
-//                 let (status, data, headers) = self;
-
-//                 res.origin.status = status;
-//                 for header in headers.into_iter() {
-//                     res.origin.headers_mut().set(header);
-//                 }
-//                 maybe_set_type(&mut res, MediaType::Html);
-//                 res.send(data);
-//                 Ok(Halt)
-//             })
-
-fn maybe_set_type<D>(res: &mut Response<D>, mime: MediaType) {
-    res.set_header_fallback(|| header::ContentType(mime.into()));
+fn maybe_set_type<D>(res: &mut Response<D>, media_type: MediaType) {
+    let mime_val: mime::Mime = media_type.into();
+    res.set_header_fallback(CONTENT_TYPE, || {
+        HeaderValue::from_str(&mime_val.to_string()).unwrap()
+    });
 }

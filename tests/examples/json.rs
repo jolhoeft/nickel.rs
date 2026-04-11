@@ -1,25 +1,27 @@
-use util::*;
+use crate::util::*;
 
-use hyper::client::Response;
-
-fn with_path<F>(path: &str, f: F) where F: FnOnce(&mut Response) {
+fn with_path<F>(path: &str, f: F)
+where
+    F: FnOnce(reqwest::blocking::Response),
+{
     run_example("json", |port| {
         let url = format!("http://localhost:{}{}", port, path);
-        let ref mut res = response_for(&url);
+        let res = response_for(&url);
         f(res)
     })
 }
 
 mod incoming {
-    use util::*;
+    use crate::util::*;
+    use http::StatusCode;
 
-    use hyper::status::StatusCode;
-    use hyper::client::Response;
-
-    fn send_body<F>(body: &str, f: F) where F: FnOnce(&mut Response) {
+    fn send_body<F>(body: &str, f: F)
+    where
+        F: FnOnce(reqwest::blocking::Response),
+    {
         run_example("json", |port| {
             let url = format!("http://localhost:{}", port);
-            let ref mut res = response_for_post(&url, body);
+            let res = response_for_post(&url, body);
             f(res)
         })
     }
@@ -35,10 +37,10 @@ mod incoming {
 
     #[test]
     fn rejects_invalid() {
-        // Missing 'firstname'
+        // Missing 'first_name'
         let body = r#"{ "lastname": "World" }"#;
         send_body(body, |res| {
-            assert_eq!(res.status, StatusCode::BadRequest);
+            assert_eq!(res.status(), StatusCode::BAD_REQUEST);
         })
     }
 }
@@ -46,12 +48,9 @@ mod incoming {
 mod outgoing {
     mod to_json {
         use super::super::with_path;
-        use util::*;
-
-        use serde_json;
+        use crate::util::*;
 
         use std::collections::HashMap;
-        use hyper::{mime, header};
 
         #[test]
         fn serializes_valid_json() {
@@ -66,21 +65,27 @@ mod outgoing {
         #[test]
         fn sets_content_type_header() {
             with_path("/Pea/Nut", |res| {
-                let content_type = res.headers.get::<header::ContentType>().unwrap();
-                let expected: mime::Mime = "application/json".parse().unwrap();
-                assert_eq!(content_type, &header::ContentType(expected));
+                let content_type = res
+                    .headers()
+                    .get("content-type")
+                    .map(|v| v.to_str().unwrap().to_string());
+                assert!(
+                    content_type
+                        .as_ref()
+                        .map(|s| s.contains("application/json"))
+                        .unwrap_or(false),
+                    "Expected application/json content type, got {:?}",
+                    content_type
+                );
             })
         }
     }
 
     mod raw {
         use super::super::with_path;
-        use util::*;
-
-        use serde_json;
+        use crate::util::*;
 
         use std::collections::HashMap;
-        use hyper::{mime, header};
 
         #[test]
         fn serializes_valid_json() {
@@ -94,9 +99,18 @@ mod outgoing {
         #[test]
         fn sets_content_type_header() {
             with_path("/raw", |res| {
-                let content_type = res.headers.get::<header::ContentType>().unwrap();
-                let expected: mime::Mime = "application/json".parse().unwrap();
-                assert_eq!(content_type, &header::ContentType(expected));
+                let content_type = res
+                    .headers()
+                    .get("content-type")
+                    .map(|v| v.to_str().unwrap().to_string());
+                assert!(
+                    content_type
+                        .as_ref()
+                        .map(|s| s.contains("application/json"))
+                        .unwrap_or(false),
+                    "Expected application/json content type, got {:?}",
+                    content_type
+                );
             })
         }
     }

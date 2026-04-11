@@ -1,9 +1,7 @@
 #[macro_use]
 extern crate nickel;
-extern crate serde;
-extern crate serde_json;
-#[macro_use]
-extern crate serde_derive;
+
+use serde_derive::{Deserialize, Serialize};
 
 use nickel::status::StatusCode;
 use nickel::{HttpRouter, JsonBody, MediaType, Nickel};
@@ -23,7 +21,7 @@ fn main() {
         "/",
         middleware! { |request, response|
             let person = try_with!(response, {
-                request.json_as::<Person>().map_err(|e| (StatusCode::BadRequest, e))
+                request.json_as::<Person>().map_err(|e| (StatusCode::BAD_REQUEST, e))
             });
             format!("Hello {} {}", person.first_name, person.last_name)
         },
@@ -41,7 +39,7 @@ fn main() {
                 first_name: first_name.to_string(),
                 last_name: last_name.to_string(),
             };
-            serde_json::to_value(person).map_err(|e| (StatusCode::InternalServerError, e))
+            serde_json::to_value(person).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
         },
     );
 

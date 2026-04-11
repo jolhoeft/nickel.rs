@@ -1,6 +1,6 @@
-use util::{run_example, read_url};
+use crate::util::{read_url, run_example};
 
-static EXPECTED : &'static str ="
+static EXPECTED: &str = "
 <html>
     <head>
         <title>

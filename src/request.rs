@@ -1,8 +1,7 @@
-use router::RouteResult;
+use crate::router::RouteResult;
+use http::Method;
 use plugin::{Extensible, Pluggable};
 use typemap::TypeMap;
-use hyper::server::Request as HyperRequest;
-use hyper::uri::RequestUri::AbsolutePath;
 
 /// A container for all the request data.
 ///
@@ -12,9 +11,16 @@ use hyper::uri::RequestUri::AbsolutePath;
 /// The lifetime `'server` represents the lifetime of data internal to
 /// the server. It is fixed and longer than `'mw`.
 pub struct Request<'mw, 'server: 'mw, D: 'mw = ()> {
-    ///the original `hyper::server::Request`
-    pub origin: HyperRequest<'mw, 'server>,
-    ///a `HashMap<String, String>` holding all params with names and values
+    _phantom: std::marker::PhantomData<&'server ()>,
+    /// The HTTP method
+    method: Method,
+    /// The request URI path (including query string)
+    uri: String,
+    /// The request headers
+    headers: http::HeaderMap,
+    /// The request body (read once, stored as bytes)
+    body: Vec<u8>,
+    /// Route params extracted by the router
     pub route_result: Option<RouteResult<'mw, D>>,
 
     map: TypeMap,
@@ -23,13 +29,22 @@ pub struct Request<'mw, 'server: 'mw, D: 'mw = ()> {
 }
 
 impl<'mw, 'server, D> Request<'mw, 'server, D> {
-    pub fn from_internal(req: HyperRequest<'mw, 'server>,
-                         data: &'mw D) -> Request<'mw, 'server, D> {
+    pub fn from_internal(
+        method: Method,
+        uri: String,
+        headers: http::HeaderMap,
+        body: Vec<u8>,
+        data: &'mw D,
+    ) -> Request<'mw, 'server, D> {
         Request {
-            origin: req,
+            _phantom: std::marker::PhantomData,
+            method,
+            uri,
+            headers,
+            body,
             route_result: None,
             map: TypeMap::new(),
-            data: data
+            data,
         }
     }
 
@@ -38,14 +53,46 @@ impl<'mw, 'server, D> Request<'mw, 'server, D> {
     }
 
     pub fn path_without_query(&self) -> Option<&str> {
-        match self.origin.uri {
-            AbsolutePath(ref path) => Some(path.splitn(2, '?').next().unwrap()),
-            _ => None
-        }
+        Some(self.uri.splitn(2, '?').next().unwrap())
     }
 
     pub fn server_data(&self) -> &'mw D {
-        &self.data
+        self.data
+    }
+
+    /// Get the HTTP method
+    pub fn method(&self) -> &Method {
+        &self.method
+    }
+
+    /// Get the request URI (path + query string)
+    pub fn uri(&self) -> &str {
+        &self.uri
+    }
+
+    /// Get the request headers
+    pub fn headers(&self) -> &http::HeaderMap {
+        &self.headers
+    }
+
+    /// Get the request body as bytes
+    pub fn body(&self) -> &[u8] {
+        &self.body
+    }
+
+    /// Get the request body as a string
+    pub fn body_as_str(&self) -> Result<&str, std::str::Utf8Error> {
+        std::str::from_utf8(&self.body)
+    }
+
+    /// Get a mutable reference to the URI (for mount rewriting)
+    pub(crate) fn uri_mut(&mut self) -> &mut String {
+        &mut self.uri
+    }
+
+    /// Get a reference to the server data (for internal use)
+    pub(crate) fn data_ref(&self) -> &'mw D {
+        self.data
     }
 }
 

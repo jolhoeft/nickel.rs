@@ -1,6 +1,4 @@
 use groupable::Groupable;
-use hyper::uri::RequestUri;
-use hyper::uri::RequestUri::{Star, AbsoluteUri, AbsolutePath, Authority};
 use std::collections::HashMap;
 use url::form_urlencoded;
 
@@ -34,29 +32,28 @@ impl Params {
     }
 }
 
-pub fn parse(encoded_string : &str) -> Params {
-    Params(form_urlencoded::parse(encoded_string.as_bytes()).into_owned().group())
+pub fn parse(encoded_string: &str) -> Params {
+    Params(
+        form_urlencoded::parse(encoded_string.as_bytes())
+            .into_owned()
+            .group(),
+    )
 }
 
-pub fn parse_uri(origin: &RequestUri) -> Params {
-    let f = |query: Option<&str>| query.map(|q| parse(&*q));
-
-    let result = match *origin {
-        AbsoluteUri(ref url) => f(url.query()),
-        AbsolutePath(ref s) => f(s.splitn(2, '?').nth(1)),
-        Star | Authority(..) => None
-    };
-
-    result.unwrap_or_else(|| Params(HashMap::new()))
+/// Parse a URI string to extract query parameters.
+pub fn parse_uri(uri: &str) -> Params {
+    // Extract query string from URI
+    let query = uri.splitn(2, '?').nth(1);
+    match query {
+        Some(q) => parse(q),
+        None => Params(HashMap::new()),
+    }
 }
 
 #[test]
 fn parses_encoded_string_with_duplicate_keys() {
     let store = parse("foo=bar&message=hello&message=world");
-    assert_eq!(
-        store.all("foo"),
-        Some(&["bar".to_string()][..])
-    );
+    assert_eq!(store.all("foo"), Some(&["bar".to_string()][..]));
     assert_eq!(store.get("message"), Some("hello"));
     // Ensure the ordering is correct
     assert_eq!(
@@ -84,25 +81,15 @@ fn parses_urlencoded_characters() {
 }
 
 #[test]
-fn splits_and_parses_an_url() {
-    use url::Url;
-    let t = |url| {
-        let store = parse_uri(&url);
-        assert_eq!(store.get("foo"), Some("bar"));
-        assert_eq!(store.get("foo").unwrap_or("other"), "bar");
-        assert_eq!(store.get("bar").unwrap_or("other"), "other");
-        assert_eq!(store.all("message"),
-                        Some(&["hello".to_string(), "world".to_string()][..]));
-        assert_eq!(store.all("car"), None);
-    };
+fn splits_and_parses_a_uri() {
+    let store = parse_uri("/foo?foo=bar");
+    assert_eq!(store.get("foo"), Some("bar"));
+    assert_eq!(store.get("foo").unwrap_or("other"), "bar");
+    assert_eq!(store.get("bar").unwrap_or("other"), "other");
+}
 
-    let raw = "http://www.foo.bar/query/test?foo=bar&message=hello&message=world";
-    t(AbsoluteUri(Url::parse(raw).unwrap()));
-
-    t(AbsolutePath("/query/test?foo=bar&message=hello&message=world".to_string()));
-
-    assert_eq!(parse_uri(&Star), Params(HashMap::new()));
-
-    let store = parse_uri(&Authority("host.com".to_string()));
-    assert_eq!(store, Params(HashMap::new()));
+#[test]
+fn no_query_string() {
+    let store = parse_uri("/foo");
+    assert_eq!(store.get("foo"), None);
 }

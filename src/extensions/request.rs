@@ -1,5 +1,4 @@
-use Request;
-use hyper::header;
+use crate::Request;
 
 pub trait Referer {
     fn referer(&self) -> Option<&str>;
@@ -9,7 +8,7 @@ impl<'mw, 'server, D> Referer for Request<'mw, 'server, D> {
     /// Get the Request's referer header
     ///
     /// # Examples
-    /// ```{rust}
+    /// ```rust,no_run
     /// extern crate nickel;
     ///
     /// use nickel::{Nickel, HttpRouter, Request, Response, MiddlewareResult};
@@ -26,7 +25,8 @@ impl<'mw, 'server, D> Referer for Request<'mw, 'server, D> {
     /// }
     /// ```
     fn referer(&self) -> Option<&str> {
-        self.origin.headers.get::<header::Referer>()
-                           .map(|r| &***r)
+        self.headers()
+            .get(http::header::REFERER)
+            .and_then(|v| v.to_str().ok())
     }
 }

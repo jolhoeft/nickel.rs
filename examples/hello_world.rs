@@ -1,6 +1,4 @@
-extern crate nickel;
-
-use nickel::{Nickel, HttpRouter, Request, Response, MiddlewareResult};
+use nickel::{HttpRouter, MiddlewareResult, Nickel, Request, Response};
 
 fn hello_world<'mw>(_req: &mut Request, res: Response<'mw>) -> MiddlewareResult<'mw> {
     res.send("Hello World")

@@ -1,15 +1,13 @@
+use crate::response::Response;
+use http::StatusCode;
 use std::borrow::Cow;
-use hyper::status::StatusCode;
 use std::io;
-use std::error::Error;
-use response::Response;
-use hyper::net::{Fresh, Streaming};
 
 /// NickelError is the basic error type for HTTP errors as well as user defined errors.
 /// One can pattern match against the `kind` property to handle the different cases.
 pub struct NickelError<'a, D: 'a = ()> {
-    pub stream: Option<Response<'a, D, Streaming>>,
-    pub message: Cow<'static, str>
+    pub stream: Option<Response<'a, D>>,
+    pub message: Cow<'static, str>,
 }
 
 impl<'a, D> NickelError<'a, D> {
@@ -18,7 +16,7 @@ impl<'a, D> NickelError<'a, D> {
     /// You should probably use `Response#error` in favor of this.
     ///
     /// # Examples
-    /// ```{rust}
+    /// ```rust,no_run
     /// # extern crate nickel;
     ///
     /// # fn main() {
@@ -27,23 +25,24 @@ impl<'a, D> NickelError<'a, D> {
     ///
     /// # #[allow(dead_code)]
     /// fn handler<'a, D>(_: &mut Request<D>, res: Response<'a, D>) -> MiddlewareResult<'a, D> {
-    ///     Err(NickelError::new(res, "Error Parsing JSON", StatusCode::BadRequest))
+    ///     Err(NickelError::new(res, "Error Parsing JSON", StatusCode::BAD_REQUEST))
     /// }
     /// # }
     /// ```
-    pub fn new<T>(mut stream: Response<'a, D, Fresh>,
-                  message: T,
-                  status_code: StatusCode) -> NickelError<'a, D>
-            where T: Into<Cow<'static, str>> {
+    pub fn new<T>(
+        mut stream: Response<'a, D>,
+        message: T,
+        status_code: StatusCode,
+    ) -> NickelError<'a, D>
+    where
+        T: Into<Cow<'static, str>>,
+    {
         stream.set(status_code);
+        stream.start();
 
-        match stream.start() {
-            Ok(stream) =>
-                NickelError {
-                    stream: Some(stream),
-                    message: message.into(),
-                },
-            Err(e) => e
+        NickelError {
+            stream: Some(stream),
+            message: message.into(),
         }
     }
 
@@ -57,7 +56,9 @@ impl<'a, D> NickelError<'a, D> {
     /// This is considered `unsafe` as deadlock can occur if the `Response`
     /// does not have the underlying stream flushed when processing is finished.
     pub unsafe fn without_response<T>(message: T) -> NickelError<'a, D>
-            where T: Into<Cow<'static, str>> {
+    where
+        T: Into<Cow<'static, str>>,
+    {
         NickelError {
             stream: None,
             message: message.into(),
@@ -65,21 +66,25 @@ impl<'a, D> NickelError<'a, D> {
     }
 
     pub fn end(self) -> Option<io::Result<()>> {
-        self.stream.map(|s| s.end())
+        // In the new architecture, the response body is buffered.
+        // There's nothing to flush, but we keep the API for compatibility.
+        self.stream.map(|_| Ok(()))
     }
 }
 
 impl<'a, T, D> From<(Response<'a, D>, (StatusCode, T))> for NickelError<'a, D>
-        where T: Into<Box<Error + 'static>> {
+where
+    T: Into<Box<dyn std::error::Error + 'static>>,
+{
     fn from((res, (errorcode, err)): (Response<'a, D>, (StatusCode, T))) -> NickelError<'a, D> {
         let err = err.into();
-        NickelError::new(res, err.description().to_string(), errorcode)
+        NickelError::new(res, err.to_string(), errorcode)
     }
 }
 
 impl<'a, D> From<(Response<'a, D>, String)> for NickelError<'a, D> {
     fn from((res, msg): (Response<'a, D>, String)) -> NickelError<'a, D> {
-        NickelError::new(res, msg, StatusCode::InternalServerError)
+        NickelError::new(res, msg, StatusCode::INTERNAL_SERVER_ERROR)
     }
 }
 

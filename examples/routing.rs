@@ -1,8 +1,8 @@
-#[macro_use] extern crate nickel;
-extern crate hyper;
+#[macro_use]
+extern crate nickel;
 
-use nickel::{Nickel, HttpRouter};
-use hyper::method::Method;
+use nickel::http::Method;
+use nickel::{HttpRouter, Nickel};
 
 fn main() {
     let mut server = Nickel::new();
@@ -17,16 +17,23 @@ fn main() {
     // For other HTTP verbs, you can use the `add_route` method.
 
     // go to http://localhost:6767/bar to see this route in action
-    server.add_route(Method::Get, "/bar", middleware! {
-        "This is the /bar handler"
-    });
+    server.add_route(
+        Method::GET,
+        "/bar",
+        middleware! {
+            "This is the /bar handler"
+        },
+    );
 
     // go to http://localhost:6767/foo to see this route in action
-    server.get("/:foo", middleware! { |request|
-        let foo = request.param("foo").unwrap();
-        let format = request.param("format").unwrap();
-        format!("Foo is '{}'. The requested format is '{}'", foo, format)
-    });
+    server.get(
+        "/:foo",
+        middleware! { |request|
+            let foo = request.param("foo").unwrap();
+            let format = request.param("format").unwrap();
+            format!("Foo is '{}'. The requested format is '{}'", foo, format)
+        },
+    );
 
     server.listen("127.0.0.1:6767").unwrap();
 }
@@ -40,16 +47,22 @@ fn explicit_router() -> nickel::Router {
 
     // Single wildcard:
     // go to http://localhost:6767/some/crazy/route to see this route in action
-    router.get("/some/*/route", middleware! {
-        "This matches /some/crazy/route but not /some/super/crazy/route"
-    });
+    router.get(
+        "/some/*/route",
+        middleware! {
+            "This matches /some/crazy/route but not /some/super/crazy/route"
+        },
+    );
 
     // Double wildcards:
     // go to http://localhost:6767/a/nice/route
     // or http://localhost:6767/a/super/nice/route to see this route in action
-    router.get("/a/**/route", middleware! {
-        "This matches /a/crazy/route and also /a/super/crazy/route"
-    });
+    router.get(
+        "/a/**/route",
+        middleware! {
+            "This matches /a/crazy/route and also /a/super/crazy/route"
+        },
+    );
 
     router
 }

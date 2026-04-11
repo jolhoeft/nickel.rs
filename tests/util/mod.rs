@@ -1,12 +1,12 @@
-use hyper::client::{Client, Response};
-use hyper::method::Method;
+use http::Method;
+use reqwest::blocking::{Client, Response};
 
 use std::collections::HashSet;
-use std::process::{Child, Command, Stdio};
-use std::thread;
-use std::io::{BufReader, BufRead, Read};
-use std::sync::Mutex;
 use std::env;
+use std::io::{BufRead, BufReader, Read};
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
+use std::thread;
 
 struct Bomb(Child);
 
@@ -14,8 +14,8 @@ struct Bomb(Child);
 impl Drop for Bomb {
     fn drop(&mut self) {
         match self.0.kill() {
-            Ok(()) => {},
-            Err(e) => panic!("Leaking child process: {:?}", e)
+            Ok(()) => {}
+            Err(e) => panic!("Leaking child process: {:?}", e),
         }
 
         if thread::panicking() {
@@ -30,44 +30,41 @@ impl Drop for Bomb {
 
 pub fn response_for_post(url: &str, body: &str) -> Response {
     Client::new()
-           .post(url)
-           .body(body)
-           .send()
-           .unwrap()
+        .post(url)
+        .body(body.to_owned())
+        .send()
+        .unwrap()
 }
 
 pub fn response_for_method(method: Method, url: &str) -> Response {
-    Client::new()
-           .request(method, url)
-           .send()
-           .unwrap()
+    Client::new().request(method, url).send().unwrap()
 }
 
 pub fn response_for(url: &str) -> Response {
-    response_for_method(Method::Get, url)
+    response_for_method(Method::GET, url)
 }
 
-pub fn read_body_to_string(res: &mut Response) -> String {
-    let mut s = String::new();
-    res.read_to_string(&mut s).unwrap();
-    s
+pub fn read_body_to_string(res: Response) -> String {
+    res.text().unwrap()
 }
 
 pub fn read_url(url: &str) -> String {
-    let mut res = response_for(url);
-    read_body_to_string(&mut res)
+    let res = response_for(url);
+    read_body_to_string(res)
 }
 
 pub fn run_example<F>(name: &str, f: F)
-where F: FnOnce(u16) {
+where
+    F: FnOnce(u16),
+{
     cargo_build(name);
 
     let command = format!("target/debug/examples/{}", name);
     let child = Command::new(&command)
-                        .env("NICKEL_TEST_HARNESS", "1")
-                        .stdout(Stdio::piped())
-                        .spawn()
-                        .unwrap();
+        .env("NICKEL_TEST_HARNESS", "1")
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
 
     let mut bomb = Bomb(child);
     let port = parse_port(&mut bomb);
@@ -93,16 +90,17 @@ fn cargo_build(name: &str) {
 
     if !built_set.insert(name.to_owned()) {
         // insert returned false, key was already in the set
-        return
+        return;
     }
 
     let mut command = Command::new("cargo");
 
-    command.env("NICKEL_TEST_HARNESS", "1")
-           .stdout(Stdio::piped())
-           .arg("build")
-           .arg("--example")
-           .arg(name);
+    command
+        .env("NICKEL_TEST_HARNESS", "1")
+        .stdout(Stdio::piped())
+        .arg("build")
+        .arg("--example")
+        .arg(name);
 
     // support for features passed in the env (as we do on travis)
     if let Some(arg) = env::var("FEATURES").ok() {
@@ -116,20 +114,22 @@ fn cargo_build(name: &str) {
 }
 
 lazy_static! {
-    static ref BUILD_LOCK : Mutex<HashSet<String>> = Mutex::new(HashSet::new());
+    static ref BUILD_LOCK: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
 }
 
 fn parse_port(&mut Bomb(ref mut process): &mut Bomb) -> u16 {
     let stdout = BufReader::new(process.stdout.as_mut().unwrap());
 
-    let line = stdout.lines()
+    let line = stdout
+        .lines()
         .map(Result::unwrap)
         .inspect(|line| println!("Processing Stdout: {:?}", line))
         .filter(|line| line.starts_with("Listening"))
         .next()
         .expect("Didn't find a line from stdout");
 
-    let port = line.rsplitn(2, ':')
+    let port = line
+        .rsplitn(2, ':')
         .next()
         .and_then(|s| s.parse().ok())
         .expect(&format!("Failed to parse port from {:?}", line));

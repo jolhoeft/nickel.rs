@@ -1,5 +1,6 @@
 use super::Matcher;
-use regex::{Regex, Captures};
+use lazy_static::lazy_static;
+use regex::{Captures, Regex};
 
 impl From<Regex> for Matcher {
     fn from(regex: Regex) -> Matcher {
@@ -18,13 +19,13 @@ lazy_static! {
     static ref REGEX_VAR_SEQ: Regex = Regex::new(r":([,a-zA-Z0-9_-]*)").unwrap();
 }
 
-pub static FORMAT_PARAM:      &'static str = "format";
+pub static FORMAT_PARAM: &'static str = "format";
 // FIXME: Once const fn lands this could be defined in terms of the above
-static FORMAT_VAR:            &'static str = ":format";
-static VAR_SEQ:               &'static str = "[,a-zA-Z0-9_-]*";
-static VAR_SEQ_WITH_SLASH:    &'static str = "[,/a-zA-Z0-9_-]*";
+static FORMAT_VAR: &'static str = ":format";
+static VAR_SEQ: &'static str = "[,a-zA-Z0-9_-]*";
+static VAR_SEQ_WITH_SLASH: &'static str = "[,/a-zA-Z0-9_-]*";
 // matches request params (e.g. ?foo=true&bar=false)
-static REGEX_PARAM_SEQ:       &'static str = "(\\?[a-zA-Z0-9%_=&-]*)?";
+static REGEX_PARAM_SEQ: &'static str = "(\\?[a-zA-Z0-9%_=&-]*)?";
 
 impl From<String> for Matcher {
     fn from(s: String) -> Matcher {

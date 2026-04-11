@@ -1,9 +1,10 @@
-#[macro_use] extern crate nickel;
+#[macro_use]
+extern crate nickel;
 
-use nickel::{Nickel, HttpRouter};
-use std::sync::Arc;
+use nickel::{HttpRouter, Nickel};
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::Arc;
 
 fn main() {
     let mut server = Nickel::new();
@@ -18,15 +19,21 @@ fn main() {
 
     // Make a shared clone of visits and move it to the handler for /a
     let visits_clone = shared_visits.clone();
-    server.get("/a", middleware! {
-        format!("{}", visits_clone.fetch_add(1, Relaxed))
-    });
+    server.get(
+        "/a",
+        middleware! {
+            format!("{}", visits_clone.fetch_add(1, Relaxed))
+        },
+    );
 
     // And finally we move the final shared instance into the handler for /b
     // (no need to clone the `Arc` again!)
-    server.get("/b", middleware! {
-        format!("{}", shared_visits.fetch_add(1, Relaxed))
-    });
+    server.get(
+        "/b",
+        middleware! {
+            format!("{}", shared_visits.fetch_add(1, Relaxed))
+        },
+    );
 
     server.listen("127.0.0.1:6767").unwrap();
 }

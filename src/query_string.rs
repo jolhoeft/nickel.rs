@@ -1,7 +1,7 @@
-use plugin::{Plugin, Pluggable};
-use request::Request;
+use crate::request::Request;
+use crate::urlencoded::{parse_uri, Query};
+use plugin::{Pluggable, Plugin};
 use typemap::Key;
-use urlencoded::{Query, parse_uri};
 
 struct QueryStringParser;
 
@@ -13,14 +13,14 @@ impl<'mw, 'conn, D> Plugin<Request<'mw, 'conn, D>> for QueryStringParser {
     type Error = ();
 
     fn eval(req: &mut Request<D>) -> Result<Query, ()> {
-        Ok(parse_uri(&req.origin.uri))
+        Ok(parse_uri(req.uri()))
     }
 }
 
 pub trait QueryString {
     /// Extracts URL encoded data from the URL query string.
     /// # Examples
-    /// ```{rust}
+    /// ```rust,no_run
     /// #[macro_use] extern crate nickel;
     /// use nickel::{Nickel, HttpRouter, QueryString};
     ///

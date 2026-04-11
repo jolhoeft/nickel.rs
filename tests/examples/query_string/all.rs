@@ -1,19 +1,24 @@
 use super::with_path;
-use util::*;
+use crate::util::*;
 
-use hyper::client::Response;
-
-fn with_query<F>(query: &str, f: F) where F: FnOnce(&mut Response) {
+fn with_query<F>(query: &str, f: F)
+where
+    F: FnOnce(reqwest::blocking::Response),
+{
     with_path(&format!("/all?{}", query), f)
 }
 
 fn assert_accepted<'a, T>(query: &str, expected_values: T)
-where T: AsRef<[&'a str]> {
+where
+    T: AsRef<[&'a str]>,
+{
     with_query(query, |res| {
         assert_eq!(
             read_body_to_string(res),
-            format!("Your foo values in the query string are: {:?}",
-                    expected_values.as_ref())
+            format!(
+                "Your foo values in the query string are: {:?}",
+                expected_values.as_ref()
+            )
         );
     })
 }

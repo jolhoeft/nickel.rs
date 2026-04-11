@@ -1,4 +1,5 @@
-use mustache::{Error, Template, compile_path};
+use log::error;
+use mustache::{compile_path, Error, Template};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs::metadata;
@@ -6,7 +7,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime};
-
 
 struct TemplateEntry {
     template: Template,       // Compiled template
@@ -20,12 +20,19 @@ impl TemplateEntry {
         let path = filename.as_ref();
         let template = compile_path(path)?;
         let attr = metadata(path)?;
-        Ok(TemplateEntry{template: template, mtime: attr.modified()?, last_checked: SystemTime::now()})
+        Ok(TemplateEntry {
+            template: template,
+            mtime: attr.modified()?,
+            last_checked: SystemTime::now(),
+        })
     }
 
     // render the tempate with the given data
     fn render<W, D>(&self, writer: &mut W, data: &D) -> Result<(), Error>
-        where W: Write, D: Serialize {
+    where
+        W: Write,
+        D: Serialize,
+    {
         self.template.render(writer, data)
     }
 }
@@ -56,20 +63,30 @@ pub struct TemplateCache {
 impl TemplateCache {
     /// Create a TemplateCache with the specified reload policy
     pub fn with_policy(policy: ReloadPolicy) -> TemplateCache {
-        TemplateCache{cache: RwLock::new(HashMap::new()), reload_policy: policy}
+        TemplateCache {
+            cache: RwLock::new(HashMap::new()),
+            reload_policy: policy,
+        }
     }
 
     /// Remove all cache entries
     pub fn clear(&self) {
-        let mut c = self.cache.write().expect("TemplateCache::clear - cache poisoned");
+        let mut c = self
+            .cache
+            .write()
+            .expect("TemplateCache::clear - cache poisoned");
         c.clear();
     }
 
     /// Force a reload of a template into the cache
     pub fn reload_template<P>(&self, path: P) -> Result<(), Error>
-        where P: AsRef<Path> {
-
-        let mut c = self.cache.write().expect("TemplateCache::reload_template - cache poisoned");
+    where
+        P: AsRef<Path>,
+    {
+        let mut c = self
+            .cache
+            .write()
+            .expect("TemplateCache::reload_template - cache poisoned");
         let template = TemplateEntry::from_template_file(&path)?;
         c.insert(path.as_ref().to_path_buf(), template);
         Ok(())
@@ -85,9 +102,15 @@ impl TemplateCache {
     //
     //   * Err(e) - mustache error
     fn try_render_template<P, W, D>(&self, path: P, writer: &mut W, data: &D) -> Result<bool, Error>
-        where P: AsRef<Path>, W: Write, D: Serialize {
-
-        let c = self.cache.read().expect("TemplateCache::try_render_template - cache poisoned");
+    where
+        P: AsRef<Path>,
+        W: Write,
+        D: Serialize,
+    {
+        let c = self
+            .cache
+            .read()
+            .expect("TemplateCache::try_render_template - cache poisoned");
         if let Some(template) = c.get(&path.as_ref().to_path_buf()) {
             let check_mtime = match self.reload_policy {
                 ReloadPolicy::Never => false,
@@ -118,9 +141,15 @@ impl TemplateCache {
     // Load the template from disk, compile it, store the compiled
     // template in cache, and render. This needs a write lock.
     fn load_render_template<P, W, D>(&self, path: P, writer: &mut W, data: &D) -> Result<(), Error>
-        where P: AsRef<Path>, W: Write, D: Serialize {
-
-        let mut c = self.cache.write().expect("TemplateCache::load_render_template - cache poisoned");
+    where
+        P: AsRef<Path>,
+        W: Write,
+        D: Serialize,
+    {
+        let mut c = self
+            .cache
+            .write()
+            .expect("TemplateCache::load_render_template - cache poisoned");
         let template = TemplateEntry::from_template_file(&path)?;
         template.render(writer, data)?;
         c.insert(path.as_ref().to_path_buf(), template);
@@ -131,7 +160,11 @@ impl TemplateCache {
     /// `data`. Templates will be reloaded if necessary according to
     /// the reload policy.
     pub fn render<P, W, D>(&self, path: P, writer: &mut W, data: &D) -> Result<(), Error>
-        where P: AsRef<Path>, W: Write, D: Serialize {
+    where
+        P: AsRef<Path>,
+        W: Write,
+        D: Serialize,
+    {
         let rendered = match self.try_render_template(&path, writer, data) {
             Ok(r) => r,
             Err(e) => {
@@ -139,7 +172,7 @@ impl TemplateCache {
                 // an error and force a reload.
                 error!("Template render error: {:?}", e);
                 false
-            },
+            }
         };
         if !rendered {
             self.load_render_template(&path, writer, data)

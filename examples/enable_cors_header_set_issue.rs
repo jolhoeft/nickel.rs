@@ -1,11 +1,15 @@
-#[macro_use] extern crate nickel;
-use nickel::{Nickel, HttpRouter, Request, Response, MiddlewareResult};
+#[macro_use]
+extern crate nickel;
+use nickel::{HttpRouter, MiddlewareResult, Nickel, Request, Response};
 
 fn enable_cors<'mw>(_req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
     // Set appropriate headers
-    res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
-    res.headers_mut().set_raw("Access-Control-Allow-Methods", vec![b"*".to_vec()]);
-    res.headers_mut().set_raw("Access-Control-Allow-Headers", vec![b"Origin, X-Requested-With, Content-Type, Accept".to_vec()]);
+    res.set_header("Access-Control-Allow-Origin", "*");
+    res.set_header("Access-Control-Allow-Methods", "*");
+    res.set_header(
+        "Access-Control-Allow-Headers",
+        "Origin, X-Requested-With, Content-Type, Accept",
+    );
 
     // Pass control to the next middleware
     res.next_middleware()

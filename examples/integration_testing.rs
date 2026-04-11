@@ -2,21 +2,17 @@
 // test setup for testing examples. Usually, it should just require `#[macro_use]`.
 #[cfg_attr(not(test), macro_use)]
 extern crate nickel;
-extern crate hyper;
-extern crate serde;
-extern crate serde_json;
-extern crate serde_derive;
 
-use nickel::{Nickel, ListeningServer, HttpRouter, JsonBody, Request, Response, MiddlewareResult};
 use nickel::status::StatusCode;
-use serde_derive::{Serialize, Deserialize};
+use nickel::{HttpRouter, JsonBody, ListeningServer, MiddlewareResult, Nickel, Request, Response};
+use serde_derive::{Deserialize, Serialize};
 use std::error::Error as StdError;
-use std::{env, str};
 use std::sync::atomic::{self, AtomicUsize};
+use std::{env, str};
 
 // Example trait to allow custom databases to be used within the integration tests
 // to test different behaviours without touching a real database.
-trait Database : Send + Sync + 'static {
+trait Database: Send + Sync + 'static {
     fn get_users(&self) -> Vec<String>;
 }
 
@@ -35,7 +31,7 @@ struct ServerData {
     //
     // To counter this limitation, we've boxed the trait so that specifying the
     // typeparam is unnecessary.
-    database: Box<Database>
+    database: Box<dyn Database>,
 }
 
 impl ServerData {
@@ -60,13 +56,21 @@ fn main() {
     start_server(address, database).unwrap();
 }
 
-fn log_hit<'mw, 'conn>(_req: &mut Request<'mw, 'conn, ServerData>, res: Response<'mw, ServerData>) -> MiddlewareResult<'mw, ServerData> {
+fn log_hit<'mw, 'conn>(
+    _req: &mut Request<'mw, 'conn, ServerData>,
+    res: Response<'mw, ServerData>,
+) -> MiddlewareResult<'mw, ServerData> {
     res.data().log_hit();
-    return res.next_middleware()
+    return res.next_middleware();
 }
 
-fn start_server<D>(address: &str, database: D) -> Result<ListeningServer, Box<StdError>>
-where D: Database {
+fn start_server<D>(
+    address: &str,
+    database: D,
+) -> Result<ListeningServer, Box<dyn StdError + Send + Sync>>
+where
+    D: Database,
+{
     let server_data = ServerData {
         hits: AtomicUsize::new(0),
         database: Box::new(database),
@@ -78,7 +82,7 @@ where D: Database {
     server.utilize(log_hit);
 
     // Core server
-    server.get("/", middleware!( "Hello World" ));
+    server.get("/", middleware!("Hello World"));
 
     server.get("/users", middleware! { |_, res| <ServerData>
         let users = res.data().get_users();
@@ -91,7 +95,7 @@ where D: Database {
         #[derive(Serialize, Deserialize)]
         struct Data { name: String, age: Option<u32> }
 
-        let client = try_with!(res, req.json_as::<Data>().map_err(|e| (StatusCode::BadRequest, e)));
+        let client = try_with!(res, req.json_as::<Data>().map_err(|e| (StatusCode::BAD_REQUEST, e)));
 
         match client.age {
             Some(age) => {
@@ -111,18 +115,20 @@ where D: Database {
     });
 
     // Get the hitcount
-    server.get("/hits", middleware!{ |_req, res| <ServerData>
-        res.data().hitcount().to_string()
-    });
+    server.get(
+        "/hits",
+        middleware! { |_req, res| <ServerData>
+            res.data().hitcount().to_string()
+        },
+    );
 
     server.listen(address)
 }
 
 #[cfg(test)]
 mod tests {
-    use self::support::{Body, Server, STATIC_SERVER, get, post};
+    use self::support::{get, post, Server, STATIC_SERVER};
 
-    use hyper::header;
     use nickel::status::StatusCode;
     use serde_json::Value;
 
@@ -132,16 +138,16 @@ mod tests {
         // let other tests hit the server
         thread::sleep(time::Duration::from_secs(1));
 
-        let mut response = server.get("/hits");
+        let response = server.get("/hits");
         response.body().parse().unwrap()
     }
 
     #[test]
     fn root_responds_with_hello_world() {
-        let mut response = get("/");
+        let response = get("/");
 
         assert_eq!(response.body(), "Hello World");
-        assert_eq!(response.status, StatusCode::Ok);
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[test]
@@ -152,36 +158,33 @@ mod tests {
 
     #[test]
     fn root_responds_with_modified_json() {
-        let mut response = post("/", r#"{ "name": "Rust", "age": 1 }"#);
+        let response = post("/", r#"{ "name": "Rust", "age": 1 }"#);
 
         let json: Value = serde_json::from_str(&response.body()).unwrap();
 
         assert_eq!(json["message"].as_str(), Some("Hello Rust, your age is 1"));
-        assert_eq!(response.status, StatusCode::Ok);
-        assert_eq!(
-            response.headers.get::<header::ContentType>(),
-            Some(&header::ContentType::json())
-        );
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.content_type_is_json());
     }
 
     #[test]
     fn accepts_json_with_missing_fields() {
-        let mut response = post("/", r#"{ "name": "Rust" }"#);
+        let response = post("/", r#"{ "name": "Rust" }"#);
 
         let json: Value = serde_json::from_str(&response.body()).unwrap();
 
-        assert_eq!(json["message"].as_str(), Some("Hello Rust, I don't know your age"));
-        assert_eq!(response.status, StatusCode::Ok);
         assert_eq!(
-            response.headers.get::<header::ContentType>(),
-            Some(&header::ContentType::json())
+            json["message"].as_str(),
+            Some("Hello Rust, I don't know your age")
         );
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.content_type_is_json());
     }
 
     #[test]
     fn doesnt_accept_bad_inputs() {
         let response = post("/", r#"{ }"#);
-        assert_eq!(response.status, StatusCode::BadRequest);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     /// This test has a Server instance all to itself.
@@ -197,16 +200,13 @@ mod tests {
 
     #[test]
     fn has_no_users_by_default() {
-        let mut response = get("/users");
+        let response = get("/users");
 
         let json: Value = serde_json::from_str(&response.body()).unwrap();
 
         assert_eq!(json["users"].as_array().unwrap().len(), 0);
-        assert_eq!(response.status, StatusCode::Ok);
-        assert_eq!(
-            response.headers.get::<header::ContentType>(),
-            Some(&header::ContentType::json())
-        );
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.content_type_is_json());
     }
 
     #[test]
@@ -217,21 +217,18 @@ mod tests {
             Server::new(server)
         };
 
-        let mut response = server.get("/users");
+        let response = server.get("/users");
 
         let json: Value = serde_json::from_str(&response.body()).unwrap();
 
         assert_eq!(json["users"].as_array().unwrap().len(), 3);
-        assert_eq!(response.status, StatusCode::Ok);
-        assert_eq!(
-            response.headers.get::<header::ContentType>(),
-            Some(&header::ContentType::json())
-        );
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.content_type_is_json());
     }
 
     mod support {
-        use hyper::client::{Client, Response as HyperResponse};
         use nickel::ListeningServer;
+        use reqwest::blocking::{Client, Response as ReqwestResponse};
 
         use std::net::SocketAddr;
 
@@ -239,13 +236,52 @@ mod tests {
             fn body(self) -> String;
         }
 
-        impl<'a> Body for &'a mut HyperResponse {
+        impl Body for ReqwestResponse {
             fn body(self) -> String {
-                use std::io::Read;
-                let mut body = String::new();
-                self.read_to_string(&mut body).expect("Failed to read body of Response");
+                let body = self.text().expect("Failed to read body of Response");
                 println!("Read body: {}", body);
                 body
+            }
+        }
+
+        /// A wrapper around ReqwestResponse that provides access to status and body
+        pub struct TestResponse {
+            status: reqwest::StatusCode,
+            content_type: Option<String>,
+            body: String,
+        }
+
+        impl TestResponse {
+            fn from_response(resp: ReqwestResponse) -> TestResponse {
+                let status = resp.status();
+                let content_type = resp
+                    .headers()
+                    .get("content-type")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+                let body = resp.text().expect("Failed to read body of Response");
+                println!("Read body: {}", body);
+                TestResponse {
+                    status,
+                    content_type,
+                    body,
+                }
+            }
+
+            pub fn body(&self) -> String {
+                self.body.clone()
+            }
+
+            pub fn status(&self) -> nickel::http::StatusCode {
+                nickel::http::StatusCode::from_u16(self.status.as_u16())
+                    .unwrap_or(nickel::http::StatusCode::INTERNAL_SERVER_ERROR)
+            }
+
+            pub fn content_type_is_json(&self) -> bool {
+                self.content_type
+                    .as_ref()
+                    .map(|ct| ct.contains("application/json"))
+                    .unwrap_or(false)
             }
         }
 
@@ -261,14 +297,21 @@ mod tests {
                 wrapped
             }
 
-            pub fn get(&self, path: &str) -> HyperResponse {
+            pub fn get(&self, path: &str) -> TestResponse {
                 let url = self.url_for(path);
-                Client::new().get(&url).send().unwrap()
+                let resp = Client::new().get(&url).send().unwrap();
+                TestResponse::from_response(resp)
             }
 
-            pub fn post(&self, path: &str, body: &str) -> HyperResponse {
+            pub fn post(&self, path: &str, body: &str) -> TestResponse {
                 let url = self.url_for(path);
-                Client::new().post(&url).body(body).send().unwrap()
+                let resp = Client::new()
+                    .post(&url)
+                    .header("Content-Type", "application/json")
+                    .body(body.to_string())
+                    .send()
+                    .unwrap();
+                TestResponse::from_response(resp)
             }
 
             pub fn url_for(&self, path: &str) -> String {
@@ -276,7 +319,7 @@ mod tests {
             }
         }
 
-        lazy_static! {
+        lazy_static::lazy_static! {
             /// This is a shared instance of the server between all the tests
             pub static ref STATIC_SERVER: Server = {
                 let server = super::super::start_server("127.0.0.1:0", vec![]).unwrap();
@@ -285,12 +328,12 @@ mod tests {
         }
 
         /// Example of a free function version of `get` which uses the shared server
-        pub fn get(path: &str) -> HyperResponse {
+        pub fn get(path: &str) -> TestResponse {
             STATIC_SERVER.get(path)
         }
 
         /// Example of a free function version of `post` which uses the shared server
-        pub fn post(path: &str, body: &str) -> HyperResponse {
+        pub fn post(path: &str, body: &str) -> TestResponse {
             STATIC_SERVER.post(path, body)
         }
     }

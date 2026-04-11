@@ -1,4 +1,4 @@
-use util::{run_example, read_url};
+use crate::util::{read_url, run_example};
 
 fn t(file: &str) {
     run_example(file, |port| {
@@ -13,5 +13,11 @@ fn t(file: &str) {
     })
 }
 
-#[test] fn non_macro() { t("hello_world") }
-#[test] fn _macro() { t("hello_world_macro") }
+#[test]
+fn non_macro() {
+    t("hello_world")
+}
+#[test]
+fn _macro() {
+    t("hello_world_macro")
+}

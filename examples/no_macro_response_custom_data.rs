@@ -1,21 +1,17 @@
-extern crate nickel;
-extern crate plugin;
-extern crate typemap;
-
-use nickel::{Nickel, HttpRouter, Request, Response, MiddlewareResult};
+use nickel::{HttpRouter, MiddlewareResult, Nickel, Request, Response};
 use plugin::Extensible;
 use typemap::Key;
 
 /**
  * This example shows how to manipulate data in a middleware stack.
- * 
+ *
  * This is quite different from the no_macro_custom_data server example, as here the structure will be uniq to each request
  * processed by the server.
  */
 
 /**
  * Struct holding data being passed along middleware
- * 
+ *
  * This need to implement the Key trait to be inserted into the TypeMap
  */
 struct MyData {
@@ -32,7 +28,7 @@ impl Key for MyData {
  */
 fn init_data<'mw>(_req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
     let data = MyData {
-        name: "".to_string()
+        name: "".to_string(),
     };
 
     res.extensions_mut().insert::<MyData>(data);

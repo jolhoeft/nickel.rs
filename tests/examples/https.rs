@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use hyper::net::{HttpsConnector,Openssl};
 use hyper::client::Client;
+use hyper::net::{HttpsConnector, Openssl};
 
-use util::{run_example, read_body_to_string};
+use util::{read_body_to_string, run_example};
 
 #[test]
 fn https() {
@@ -35,8 +35,6 @@ fn create_context() -> Openssl {
 fn read_url_https(url: &str, ssl: Openssl) -> String {
     let connector = HttpsConnector::new(ssl);
     let client = Client::with_connector(connector);
-    let mut res = client.get(url)
-                        .send()
-                        .unwrap();
+    let mut res = client.get(url).send().unwrap();
     read_body_to_string(&mut res)
 }

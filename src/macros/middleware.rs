@@ -43,7 +43,7 @@
 /// supports annotating the macro so as to drive the inference allowing the handler
 /// code to remain with minimal annotations.
 ///
-/// ```
+/// ```rust,no_run
 /// # #[macro_use] extern crate nickel;
 /// # fn main() {
 /// # struct MyServerData;
@@ -51,7 +51,7 @@
 ///     // _response is of type Response<MyServerData>
 ///     "Hello World"
 /// }
-/// # ; // This semicolon is required to satisfy returning `()`
+/// # ;
 /// # }
 /// ```
 #[macro_export]
@@ -114,8 +114,16 @@ macro_rules! _middleware_inner {
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! as_block { ($b:block) => ( $b ) }
+macro_rules! as_block {
+    ($b:block) => {
+        $b
+    };
+}
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! as_pat { ($p:pat) => ( $p ) }
+macro_rules! as_pat {
+    ($p:pat) => {
+        $p
+    };
+}

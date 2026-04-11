@@ -1,6 +1,7 @@
-#[macro_use] extern crate nickel;
+#[macro_use]
+extern crate nickel;
 
-use nickel::{Nickel, HttpRouter};
+use nickel::{HttpRouter, Nickel};
 
 fn main() {
     let mut server = Nickel::new();

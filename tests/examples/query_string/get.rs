@@ -1,25 +1,25 @@
 use super::with_path;
-use util::*;
+use crate::util::*;
+use http::StatusCode;
 
-use hyper::client::Response;
-use hyper::status::StatusCode;
-
-fn with_query<F>(query: &str, f: F) where F: FnOnce(&mut Response) {
+fn with_query<F>(query: &str, f: F)
+where
+    F: FnOnce(reqwest::blocking::Response),
+{
     with_path(&format!("/get?{}", query), f)
 }
 
 fn assert_accepted(query: &str) {
     with_query(query, |res| {
+        assert_eq!(res.status(), StatusCode::OK);
         let s = read_body_to_string(res);
-
-        assert_eq!(res.status, StatusCode::Ok);
         assert_eq!(s, "Congratulations on conforming!");
     })
 }
 
 fn assert_rejected(query: &str) {
     with_query(query, |res| {
-        assert_eq!(res.status, StatusCode::BadRequest)
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST)
     })
 }
 

@@ -1,6 +1,6 @@
-use {Response, MiddlewareResult};
-use hyper::header;
-use status::StatusCode;
+use crate::{MiddlewareResult, Response};
+use http::header::{HeaderValue, LOCATION};
+use http::StatusCode;
 
 pub trait Redirect: Sized {
     type Result;
@@ -8,7 +8,7 @@ pub trait Redirect: Sized {
     /// Redirect the response to a given target
     ///
     /// # Examples
-    /// ```{rust}
+    /// ```rust,no_run
     /// extern crate nickel;
     ///
     /// use nickel::{Nickel, HttpRouter, Request, Response, MiddlewareResult};
@@ -24,17 +24,22 @@ pub trait Redirect: Sized {
     /// }
     /// ```
     fn redirect<T>(self, target: T) -> Self::Result
-    where T: Into<String> {
-        self.redirect_with(target, StatusCode::Found)
+    where
+        T: Into<String>,
+    {
+        self.redirect_with(target, StatusCode::FOUND)
     }
 
     fn redirect_permanently<T>(self, target: T) -> Self::Result
-    where T: Into<String> {
-        self.redirect_with(target, StatusCode::MovedPermanently)
+    where
+        T: Into<String>,
+    {
+        self.redirect_with(target, StatusCode::MOVED_PERMANENTLY)
     }
 
     fn redirect_with<T>(self, target: T, status: StatusCode) -> Self::Result
-    where T: Into<String>;
+    where
+        T: Into<String>;
 }
 
 // Todo: rework this to return a Responder so it will work with the
@@ -43,12 +48,20 @@ impl<'a, D> Redirect for Response<'a, D> {
     type Result = MiddlewareResult<'a, D>;
 
     fn redirect_with<T>(mut self, target: T, status: StatusCode) -> Self::Result
-    where T: Into<String> {
-        self.set(header::Location(target.into()));
+    where
+        T: Into<String>,
+    {
+        let target = target.into();
+        if let Ok(val) = HeaderValue::from_str(&target) {
+            self.headers_mut().insert(LOCATION, val);
+        }
 
-        let code = status.to_u16();
+        let code = status.as_u16();
         if code < 300 || code >= 400 {
-            self.error(StatusCode::InternalServerError, "redirect_with called with non-3xx status code")
+            self.error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "redirect_with called with non-3xx status code",
+            )
         } else {
             self.send(status)
         }

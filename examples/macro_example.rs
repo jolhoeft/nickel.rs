@@ -1,36 +1,33 @@
-#[macro_use] extern crate nickel;
-extern crate regex;
-extern crate serde;
-#[macro_use] extern crate serde_derive;
-extern crate hyper;
+#[macro_use]
+extern crate nickel;
 
-use std::io::Write;
-use nickel::status::StatusCode::{self, NotFound};
+use nickel::status::StatusCode;
 use nickel::{
-    Nickel, NickelError, Continue, Halt, Request, Response, MediaType,
-    QueryString, JsonBody, StaticFilesHandler, MiddlewareResult, Action
+    Action, Continue, Halt, JsonBody, MediaType, MiddlewareResult, Nickel, NickelError,
+    QueryString, Request, Response, StaticFilesHandler,
 };
 use regex::Regex;
-use hyper::header::Location;
+use serde_derive::{Deserialize, Serialize};
+use std::io::Write;
 
 #[derive(Serialize, Deserialize)]
 struct Person {
     firstname: String,
-    lastname:  String,
+    lastname: String,
 }
 
 //this is an example middleware function that just logs each request
 fn logger<'a, D>(request: &mut Request<D>, response: Response<'a, D>) -> MiddlewareResult<'a, D> {
-    println!("logging request: {:?}", request.origin.uri);
+    println!("logging request: {:?}", request.uri());
     response.next_middleware()
 }
 
 //this is how to overwrite the default error handler to handle 404 cases with a custom view
 fn custom_404<'a, D>(err: &mut NickelError<D>, _req: &mut Request<D>) -> Action {
     if let Some(ref mut res) = err.stream {
-        if res.status() == NotFound {
+        if res.status() == StatusCode::NOT_FOUND {
             let _ = res.write_all(b"<h1>Call the police!</h1>");
-            return Halt(())
+            return Halt(());
         }
     }
 
@@ -81,15 +78,15 @@ fn main() {
 
         // go to http://localhost:6767/redirect to see this route in action
         get "/redirect" => |_, mut response| {
-            response.set(Location("http://nickel.rs".into()));
+            response.set_header("Location", "http://nickel.rs");
 
-            StatusCode::PermanentRedirect
+            StatusCode::PERMANENT_REDIRECT
         }
 
         // go to http://localhost:6767/private to see this route in action
         get "/private" => {
             // returning a typed http status and a response body
-            (StatusCode::Unauthorized, "This is a private place")
+            (StatusCode::UNAUTHORIZED, "This is a private place")
         }
 
         // go to http://localhost:6767/some/crazy/route to see this route in action
