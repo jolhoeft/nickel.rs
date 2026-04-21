@@ -45,7 +45,6 @@ mimes! {
         Atom,     "atom",   "atom",
         Bin,      "bin",    "octet-stream",
         Bmp,      "bmp",    "bmp",
-        Css,      "css",    "css",
         Dart,     "dart",   "dart",
         Dmg,      "dmg",    "apple-diskimage",
         Doc,      "doc",    "msword",
@@ -120,6 +119,7 @@ mimes! {
     }
     "text" => {
         Htm,      "htm",    "html",
+        Css,      "css",    "css",
         Html,     "html",   "html",
         Manifest, "manifest", "cache-manifest",
         Md,       "md",     "x-markdown",
